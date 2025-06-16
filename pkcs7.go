@@ -54,6 +54,7 @@ var (
 	OIDSignedData             = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}
 	OIDEnvelopedData          = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 3}
 	OIDEncryptedData          = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 6}
+	OIDCompressedData         = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 1, 9}
 	OIDAttributeContentType   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
 	OIDAttributeMessageDigest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
 	OIDAttributeSigningTime   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 5}
@@ -96,6 +97,9 @@ var (
 	OIDEncryptionAlgorithmAES128GCM  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 6}  // see https://www.rfc-editor.org/rfc/rfc5084.html#section-3.2
 	OIDEncryptionAlgorithmAES128CBC  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 2}  // see https://www.rfc-editor.org/rfc/rfc8018.html#appendix-B.2.5
 	OIDEncryptionAlgorithmAES256GCM  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 46} // see https://www.rfc-editor.org/rfc/rfc5084.html#section-3.2
+
+	// Compression Algorithms
+	OIDCompressionAlgorithmZlib = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 3, 8}
 )
 
 func getHashForOID(oid asn1.ObjectIdentifier) (crypto.Hash, error) {
@@ -199,6 +203,8 @@ func Parse(data []byte) (p7 *PKCS7, err error) {
 		return parseEnvelopedData(info.Content.Bytes)
 	case info.ContentType.Equal(OIDEncryptedData):
 		return parseEncryptedData(info.Content.Bytes)
+	case info.ContentType.Equal(OIDCompressedData):
+		return parseCompressedData(info.Content.Bytes)
 	}
 	return nil, ErrUnsupportedContentType
 }
@@ -220,6 +226,16 @@ func parseEncryptedData(data []byte) (*PKCS7, error) {
 	}
 	return &PKCS7{
 		raw: ed,
+	}, nil
+}
+
+func parseCompressedData(data []byte) (*PKCS7, error) {
+	var cd compressedData
+	if _, err := asn1.Unmarshal(data, &cd); err != nil {
+		return nil, err
+	}
+	return &PKCS7{
+		raw: cd,
 	}, nil
 }
 
