@@ -31,7 +31,27 @@ func (p7 *PKCS7) VerifyWithChain(truststore *x509.CertPool) (err error) {
 		return errors.New("pkcs7: Message has no signers")
 	}
 	for _, signer := range p7.Signers {
-		if err := verifySignature(p7, signer, truststore); err != nil {
+		if err := verifySignature(p7, p7.Content, signer, truststore); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// VerifyDetachedWithChain checks the signatures of a PKCS7 object against
+// the provided signed data (detached signature).
+//
+// If truststore is not nil, it also verifies the chain of trust of
+// the end-entity signer cert to one of the roots in the
+// truststore. When the PKCS7 object includes the signing time
+// authenticated attr verifies the chain at that time and UTC now
+// otherwise.
+func (p7 *PKCS7) VerifyDetachedWithChain(signedData []byte, truststore *x509.CertPool) (err error) {
+	if len(p7.Signers) == 0 {
+		return errors.New("pkcs7: Message has no signers")
+	}
+	for _, signer := range p7.Signers {
+		if err := verifySignature(p7, signedData, signer, truststore); err != nil {
 			return err
 		}
 	}
@@ -130,8 +150,7 @@ func verifySignatureAtTime(p7 *PKCS7, signer signerInfo, truststore *x509.CertPo
 	return ee.CheckSignature(sigalg, signedData, signer.EncryptedDigest)
 }
 
-func verifySignature(p7 *PKCS7, signer signerInfo, truststore *x509.CertPool) (err error) {
-	signedData := p7.Content
+func verifySignature(p7 *PKCS7, signedData []byte, signer signerInfo, truststore *x509.CertPool) (err error) {
 	ee := getCertFromCertsByIssuerAndSerial(p7.Certificates, signer.IssuerAndSerialNumber)
 	if ee == nil {
 		return errors.New("pkcs7: No certificate for signer")
@@ -148,7 +167,7 @@ func verifySignature(p7 *PKCS7, signer signerInfo, truststore *x509.CertPool) (e
 		if err != nil {
 			return err
 		}
-		computed, err := calculateHash(p7.Hasher, hash, p7.Content)
+		computed, err := calculateHash(p7.Hasher, hash, signedData)
 		if err != nil {
 			return err
 		}
