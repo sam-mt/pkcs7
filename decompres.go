@@ -13,12 +13,7 @@ import (
 type compressedData struct {
 	Version               int
 	CompressionAlgorithm  pkix.AlgorithmIdentifier
-	CompressedContentInfo compressedContentInfo
-}
-
-type compressedContentInfo struct {
-	ContentType       asn1.ObjectIdentifier
-	CompressedContent asn1.RawValue `asn1:"tag:0,optional"`
+	CompressedContentInfo contentInfo
 }
 
 // ErrUnsupportedCompressionAlgorithm
@@ -35,7 +30,7 @@ func (p7 *PKCS7) Decompress() ([]byte, error) {
 	}
 
 	var compressedContent []byte
-	_, err := asn1.Unmarshal(data.CompressedContentInfo.CompressedContent.Bytes, &compressedContent)
+	_, err := asn1.Unmarshal(data.CompressedContentInfo.Content.Bytes, &compressedContent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal compressed content: %v", err)
 	}
