@@ -65,9 +65,83 @@ const (
 	EncryptionAlgorithmAES256GCM
 )
 
+// EncryptionConfig holds all configuration parameters for PKCS7 encryption operations.
+// This struct is safe for concurrent use as it should be treated as immutable after creation.
+type EncryptionConfig struct {
+	ContentEncryptionAlgorithm int
+	KeyEncryptionAlgorithm     asn1.ObjectIdentifier
+	KeyEncryptionHash          crypto.Hash
+}
+
+// Validate checks if the configuration is valid and returns an error if not.
+func (c *EncryptionConfig) Validate() error {
+	// Validate ContentEncryptionAlgorithm
+	switch c.ContentEncryptionAlgorithm {
+	case EncryptionAlgorithmDESCBC, EncryptionAlgorithmAES128CBC,
+		EncryptionAlgorithmAES192CBC, EncryptionAlgorithmAES256CBC,
+		EncryptionAlgorithmAES128GCM, EncryptionAlgorithmAES192GCM,
+		EncryptionAlgorithmAES256GCM:
+		// Valid
+	default:
+		return ErrUnsupportedEncryptionAlgorithm
+	}
+
+	// Validate KeyEncryptionAlgorithm
+	if !c.KeyEncryptionAlgorithm.Equal(OIDEncryptionAlgorithmRSA) &&
+		!c.KeyEncryptionAlgorithm.Equal(OIDEncryptionAlgorithmRSAESOAEP) {
+		return ErrUnsupportedKeyEncryptionAlgorithm
+	}
+
+	// Validate KeyEncryptionHash
+	switch c.KeyEncryptionHash {
+	case crypto.SHA1, crypto.SHA224, crypto.SHA256, crypto.SHA384, crypto.SHA512:
+		// Valid
+	default:
+		return ErrUnsupportedKeyEncryptionHash
+	}
+
+	return nil
+}
+
+// DefaultConfig returns a configuration with modern, secure defaults.
+// This is the recommended configuration for new applications.
+func DefaultConfig() *EncryptionConfig {
+	return &EncryptionConfig{
+		ContentEncryptionAlgorithm: EncryptionAlgorithmAES256GCM,
+		KeyEncryptionAlgorithm:     OIDEncryptionAlgorithmRSAESOAEP,
+		KeyEncryptionHash:          crypto.SHA256,
+	}
+}
+
+// LegacyConfig returns a configuration that matches the current package defaults.
+// This maintains backward compatibility with existing behavior.
+func LegacyConfig() *EncryptionConfig {
+	return &EncryptionConfig{
+		ContentEncryptionAlgorithm: EncryptionAlgorithmDESCBC,
+		KeyEncryptionAlgorithm:     OIDEncryptionAlgorithmRSA,
+		KeyEncryptionHash:          crypto.SHA256,
+	}
+}
+
+// NewEncryptionConfig creates a new configuration with specified parameters.
+func NewEncryptionConfig(contentAlg int, keyAlg asn1.ObjectIdentifier, hash crypto.Hash) (*EncryptionConfig, error) {
+	config := &EncryptionConfig{
+		ContentEncryptionAlgorithm: contentAlg,
+		KeyEncryptionAlgorithm:     keyAlg,
+		KeyEncryptionHash:          hash,
+	}
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
 // ContentEncryptionAlgorithm determines the algorithm used to encrypt the
 // plaintext message. Change the value of this variable to change which
 // algorithm is used in the Encrypt() function.
+//
+// Deprecated: Global variables are not safe for concurrent use.
+// Use EncryptWithConfig with an EncryptionConfig instead.
 var ContentEncryptionAlgorithm = EncryptionAlgorithmDESCBC
 
 // ErrUnsupportedEncryptionAlgorithm is returned when attempting to encrypt
@@ -103,10 +177,10 @@ type aesGCMParameters struct {
 	ICVLen int
 }
 
-func encryptAESGCM(content []byte, key []byte) ([]byte, *encryptedContentInfo, error) {
+func encryptAESGCM(content []byte, key []byte, config *EncryptionConfig) ([]byte, *encryptedContentInfo, error) {
 	var keyLen int
 	var algID asn1.ObjectIdentifier
-	switch ContentEncryptionAlgorithm {
+	switch config.ContentEncryptionAlgorithm {
 	case EncryptionAlgorithmAES128GCM:
 		keyLen = 16
 		algID = OIDEncryptionAlgorithmAES128GCM
@@ -117,7 +191,7 @@ func encryptAESGCM(content []byte, key []byte) ([]byte, *encryptedContentInfo, e
 		keyLen = 32
 		algID = OIDEncryptionAlgorithmAES256GCM
 	default:
-		return nil, nil, fmt.Errorf("invalid ContentEncryptionAlgorithm in encryptAESGCM: %d", ContentEncryptionAlgorithm)
+		return nil, nil, fmt.Errorf("invalid ContentEncryptionAlgorithm in encryptAESGCM: %d", config.ContentEncryptionAlgorithm)
 	}
 	if key == nil {
 		// Create AES key
@@ -176,7 +250,7 @@ func encryptAESGCM(content []byte, key []byte) ([]byte, *encryptedContentInfo, e
 	return key, &eci, nil
 }
 
-func encryptDESCBC(content []byte, key []byte) ([]byte, *encryptedContentInfo, error) {
+func encryptDESCBC(content []byte, key []byte, config *EncryptionConfig) ([]byte, *encryptedContentInfo, error) {
 	if key == nil {
 		// Create DES key
 		key = make([]byte, 8)
@@ -220,10 +294,10 @@ func encryptDESCBC(content []byte, key []byte) ([]byte, *encryptedContentInfo, e
 	return key, &eci, nil
 }
 
-func encryptAESCBC(content []byte, key []byte) ([]byte, *encryptedContentInfo, error) {
+func encryptAESCBC(content []byte, key []byte, config *EncryptionConfig) ([]byte, *encryptedContentInfo, error) {
 	var keyLen int
 	var algID asn1.ObjectIdentifier
-	switch ContentEncryptionAlgorithm {
+	switch config.ContentEncryptionAlgorithm {
 	case EncryptionAlgorithmAES128CBC:
 		keyLen = 16
 		algID = OIDEncryptionAlgorithmAES128CBC
@@ -234,7 +308,7 @@ func encryptAESCBC(content []byte, key []byte) ([]byte, *encryptedContentInfo, e
 		keyLen = 32
 		algID = OIDEncryptionAlgorithmAES256CBC
 	default:
-		return nil, nil, fmt.Errorf("invalid ContentEncryptionAlgorithm in encryptAESCBC: %d", ContentEncryptionAlgorithm)
+		return nil, nil, fmt.Errorf("invalid ContentEncryptionAlgorithm in encryptAESCBC: %d", config.ContentEncryptionAlgorithm)
 	}
 
 	if key == nil {
@@ -280,38 +354,40 @@ func encryptAESCBC(content []byte, key []byte) ([]byte, *encryptedContentInfo, e
 	return key, &eci, nil
 }
 
-// Encrypt creates and returns an envelope data PKCS7 structure with encrypted
-// recipient keys for each recipient public key.
+// EncryptWithConfig creates and returns an envelope data PKCS7 structure with encrypted
+// recipient keys for each recipient public key, using the provided configuration.
+// This function is safe for concurrent use.
 //
-// The algorithm used to perform encryption is determined by the current value
-// of the global ContentEncryptionAlgorithm package variable. By default, the
-// value is EncryptionAlgorithmDESCBC. To use a different algorithm, change the
-// value before calling Encrypt(). For example:
-//
-//	ContentEncryptionAlgorithm = EncryptionAlgorithmAES256GCM
-//
-// TODO(fullsailor): Add support for encrypting content with other algorithms
-func Encrypt(content []byte, recipients []*x509.Certificate) ([]byte, error) {
+// The algorithm used to perform encryption is determined by the provided configuration.
+// Use DefaultConfig() for modern secure defaults, or LegacyConfig() for backward compatibility.
+func EncryptWithConfig(content []byte, recipients []*x509.Certificate, config *EncryptionConfig) ([]byte, error) {
+	if config == nil {
+		return nil, errors.New("pkcs7: encryption config cannot be nil")
+	}
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("pkcs7: invalid encryption config: %v", err)
+	}
+
 	var eci *encryptedContentInfo
 	var key []byte
 	var err error
 
 	// Apply chosen symmetric encryption method
-	switch ContentEncryptionAlgorithm {
+	switch config.ContentEncryptionAlgorithm {
 	case EncryptionAlgorithmDESCBC:
-		key, eci, err = encryptDESCBC(content, nil)
+		key, eci, err = encryptDESCBC(content, nil, config)
 	case EncryptionAlgorithmAES128CBC:
 		fallthrough
 	case EncryptionAlgorithmAES192CBC:
 		fallthrough
 	case EncryptionAlgorithmAES256CBC:
-		key, eci, err = encryptAESCBC(content, nil)
+		key, eci, err = encryptAESCBC(content, nil, config)
 	case EncryptionAlgorithmAES128GCM:
 		fallthrough
 	case EncryptionAlgorithmAES192GCM:
 		fallthrough
 	case EncryptionAlgorithmAES256GCM:
-		key, eci, err = encryptAESGCM(content, nil)
+		key, eci, err = encryptAESGCM(content, nil, config)
 
 	default:
 		return nil, ErrUnsupportedEncryptionAlgorithm
@@ -324,8 +400,8 @@ func Encrypt(content []byte, recipients []*x509.Certificate) ([]byte, error) {
 	// Prepare each recipient's encrypted cipher key
 	recipientInfos := make([]recipientInfo, len(recipients))
 	for i, recipient := range recipients {
-		algorithm := KeyEncryptionAlgorithm
-		hash := KeyEncryptionHash
+		algorithm := config.KeyEncryptionAlgorithm
+		hash := config.KeyEncryptionHash
 		var kea pkix.AlgorithmIdentifier
 		switch {
 		case algorithm.Equal(OIDEncryptionAlgorithmRSAESOAEP):
@@ -381,6 +457,29 @@ func Encrypt(content []byte, recipients []*x509.Certificate) ([]byte, error) {
 	return asn1.Marshal(wrapper)
 }
 
+// Encrypt creates and returns an envelope data PKCS7 structure with encrypted
+// recipient keys for each recipient public key.
+//
+// The algorithm used to perform encryption is determined by the current value
+// of the global ContentEncryptionAlgorithm package variable. By default, the
+// value is EncryptionAlgorithmDESCBC. To use a different algorithm, change the
+// value before calling Encrypt(). For example:
+//
+//	ContentEncryptionAlgorithm = EncryptionAlgorithmAES256GCM
+//
+// Deprecated: Use EncryptWithConfig for thread-safe encryption with explicit configuration.
+// This function reads from global variables which are not safe for concurrent use.
+//
+// TODO(fullsailor): Add support for encrypting content with other algorithms
+func Encrypt(content []byte, recipients []*x509.Certificate) ([]byte, error) {
+	config := &EncryptionConfig{
+		ContentEncryptionAlgorithm: ContentEncryptionAlgorithm,
+		KeyEncryptionAlgorithm:     KeyEncryptionAlgorithm,
+		KeyEncryptionHash:          KeyEncryptionHash,
+	}
+	return EncryptWithConfig(content, recipients, config)
+}
+
 func getParametersForKeyEncryptionAlgorithm(algorithm asn1.ObjectIdentifier, hash crypto.Hash) (asn1.RawValue, error) {
 	if !algorithm.Equal(OIDEncryptionAlgorithmRSAESOAEP) {
 		return asn1.RawValue{}, nil // return empty; not used
@@ -412,27 +511,34 @@ func getParametersForKeyEncryptionAlgorithm(algorithm asn1.ObjectIdentifier, has
 	}, nil
 }
 
-// EncryptUsingPSK creates and returns an encrypted data PKCS7 structure,
-// encrypted using caller provided pre-shared secret.
-func EncryptUsingPSK(content []byte, key []byte) ([]byte, error) {
-	var eci *encryptedContentInfo
-	var err error
-
+// EncryptUsingPSKWithConfig creates and returns an encrypted data PKCS7 structure,
+// encrypted using caller provided pre-shared secret and the provided configuration.
+// This function is safe for concurrent use.
+func EncryptUsingPSKWithConfig(content []byte, key []byte, config *EncryptionConfig) ([]byte, error) {
+	if config == nil {
+		return nil, errors.New("pkcs7: encryption config cannot be nil")
+	}
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("pkcs7: invalid encryption config: %v", err)
+	}
 	if key == nil {
 		return nil, ErrPSKNotProvided
 	}
 
+	var eci *encryptedContentInfo
+	var err error
+
 	// Apply chosen symmetric encryption method
-	switch ContentEncryptionAlgorithm {
+	switch config.ContentEncryptionAlgorithm {
 	case EncryptionAlgorithmDESCBC:
-		_, eci, err = encryptDESCBC(content, key)
+		_, eci, err = encryptDESCBC(content, key, config)
 
 	case EncryptionAlgorithmAES128GCM:
 		fallthrough
 	case EncryptionAlgorithmAES192GCM:
 		fallthrough
 	case EncryptionAlgorithmAES256GCM:
-		_, eci, err = encryptAESGCM(content, key)
+		_, eci, err = encryptAESGCM(content, key, config)
 
 	default:
 		return nil, ErrUnsupportedEncryptionAlgorithm
@@ -459,6 +565,20 @@ func EncryptUsingPSK(content []byte, key []byte) ([]byte, error) {
 	}
 
 	return asn1.Marshal(wrapper)
+}
+
+// EncryptUsingPSK creates and returns an encrypted data PKCS7 structure,
+// encrypted using caller provided pre-shared secret.
+//
+// Deprecated: Use EncryptUsingPSKWithConfig for thread-safe encryption with explicit configuration.
+// This function reads from global variables which are not safe for concurrent use.
+func EncryptUsingPSK(content []byte, key []byte) ([]byte, error) {
+	config := &EncryptionConfig{
+		ContentEncryptionAlgorithm: ContentEncryptionAlgorithm,
+		KeyEncryptionAlgorithm:     KeyEncryptionAlgorithm,
+		KeyEncryptionHash:          KeyEncryptionHash,
+	}
+	return EncryptUsingPSKWithConfig(content, key, config)
 }
 
 func marshalEncryptedContent(content []byte) asn1.RawValue {
