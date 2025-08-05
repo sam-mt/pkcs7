@@ -94,9 +94,11 @@ var (
 	// Symmetric Encryption Algorithms
 	OIDEncryptionAlgorithmDESCBC     = asn1.ObjectIdentifier{1, 3, 14, 3, 2, 7}               // see https://www.rfc-editor.org/rfc/rfc8018.html#appendix-B.2.1
 	OIDEncryptionAlgorithmDESEDE3CBC = asn1.ObjectIdentifier{1, 2, 840, 113549, 3, 7}         // see https://www.rfc-editor.org/rfc/rfc8018.html#appendix-B.2.2
+	OIDEncryptionAlgorithmAES128CBC  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 2}  // see https://www.rfc-editor.org/rfc/rfc3565.html#section-4.1
+	OIDEncryptionAlgorithmAES192CBC  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 22} // see https://www.rfc-editor.org/rfc/rfc3565.html#section-4.1
 	OIDEncryptionAlgorithmAES256CBC  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 42} // see https://www.rfc-editor.org/rfc/rfc3565.html#section-4.1
 	OIDEncryptionAlgorithmAES128GCM  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 6}  // see https://www.rfc-editor.org/rfc/rfc5084.html#section-3.2
-	OIDEncryptionAlgorithmAES128CBC  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 2}  // see https://www.rfc-editor.org/rfc/rfc8018.html#appendix-B.2.5
+	OIDEncryptionAlgorithmAES192GCM  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 26} // see https://www.rfc-editor.org/rfc/rfc5084.html#section-3.2
 	OIDEncryptionAlgorithmAES256GCM  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 46} // see https://www.rfc-editor.org/rfc/rfc5084.html#section-3.2
 
 	// Compression Algorithms

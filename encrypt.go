@@ -47,12 +47,19 @@ const (
 	// Avoid this algorithm unless required for interoperability; use AES GCM instead.
 	EncryptionAlgorithmAES128CBC
 
+	// EncryptionAlgorithmAES192CBC is the AES 192 bits with CBC encryption algorithm
+	// Avoid this algorithm unless required for interoperability; use AES GCM instead.
+	EncryptionAlgorithmAES192CBC
+
 	// EncryptionAlgorithmAES256CBC is the AES 256 bits with CBC encryption algorithm
 	// Avoid this algorithm unless required for interoperability; use AES GCM instead.
 	EncryptionAlgorithmAES256CBC
 
 	// EncryptionAlgorithmAES128GCM is the AES 128 bits with GCM encryption algorithm
 	EncryptionAlgorithmAES128GCM
+
+	// EncryptionAlgorithmAES192GCM is the AES 192 bits with GCM encryption algorithm
+	EncryptionAlgorithmAES192GCM
 
 	// EncryptionAlgorithmAES256GCM is the AES 256 bits with GCM encryption algorithm
 	EncryptionAlgorithmAES256GCM
@@ -103,6 +110,9 @@ func encryptAESGCM(content []byte, key []byte) ([]byte, *encryptedContentInfo, e
 	case EncryptionAlgorithmAES128GCM:
 		keyLen = 16
 		algID = OIDEncryptionAlgorithmAES128GCM
+	case EncryptionAlgorithmAES192GCM:
+		keyLen = 24
+		algID = OIDEncryptionAlgorithmAES192GCM
 	case EncryptionAlgorithmAES256GCM:
 		keyLen = 32
 		algID = OIDEncryptionAlgorithmAES256GCM
@@ -217,6 +227,9 @@ func encryptAESCBC(content []byte, key []byte) ([]byte, *encryptedContentInfo, e
 	case EncryptionAlgorithmAES128CBC:
 		keyLen = 16
 		algID = OIDEncryptionAlgorithmAES128CBC
+	case EncryptionAlgorithmAES192CBC:
+		keyLen = 24
+		algID = OIDEncryptionAlgorithmAES192CBC
 	case EncryptionAlgorithmAES256CBC:
 		keyLen = 32
 		algID = OIDEncryptionAlgorithmAES256CBC
@@ -289,9 +302,13 @@ func Encrypt(content []byte, recipients []*x509.Certificate) ([]byte, error) {
 		key, eci, err = encryptDESCBC(content, nil)
 	case EncryptionAlgorithmAES128CBC:
 		fallthrough
+	case EncryptionAlgorithmAES192CBC:
+		fallthrough
 	case EncryptionAlgorithmAES256CBC:
 		key, eci, err = encryptAESCBC(content, nil)
 	case EncryptionAlgorithmAES128GCM:
+		fallthrough
+	case EncryptionAlgorithmAES192GCM:
 		fallthrough
 	case EncryptionAlgorithmAES256GCM:
 		key, eci, err = encryptAESGCM(content, nil)
@@ -411,6 +428,8 @@ func EncryptUsingPSK(content []byte, key []byte) ([]byte, error) {
 		_, eci, err = encryptDESCBC(content, key)
 
 	case EncryptionAlgorithmAES128GCM:
+		fallthrough
+	case EncryptionAlgorithmAES192GCM:
 		fallthrough
 	case EncryptionAlgorithmAES256GCM:
 		_, eci, err = encryptAESGCM(content, key)
