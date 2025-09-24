@@ -43,6 +43,9 @@ const (
 	// EncryptionAlgorithmDESCBC is the DES CBC encryption algorithm
 	EncryptionAlgorithmDESCBC = iota
 
+	// EncryptionAlgorithm3DESCBC is the 3DES CBC encryption algorithm
+	EncryptionAlgorithm3DESCBC
+
 	// EncryptionAlgorithmAES128CBC is the AES 128 bits with CBC encryption algorithm
 	// Avoid this algorithm unless required for interoperability; use AES GCM instead.
 	EncryptionAlgorithmAES128CBC
@@ -77,7 +80,7 @@ type EncryptionConfig struct {
 func (c *EncryptionConfig) Validate() error {
 	// Validate ContentEncryptionAlgorithm
 	switch c.ContentEncryptionAlgorithm {
-	case EncryptionAlgorithmDESCBC, EncryptionAlgorithmAES128CBC,
+	case EncryptionAlgorithmDESCBC, EncryptionAlgorithm3DESCBC, EncryptionAlgorithmAES128CBC,
 		EncryptionAlgorithmAES192CBC, EncryptionAlgorithmAES256CBC,
 		EncryptionAlgorithmAES128GCM, EncryptionAlgorithmAES192GCM,
 		EncryptionAlgorithmAES256GCM:
@@ -146,7 +149,7 @@ var ContentEncryptionAlgorithm = EncryptionAlgorithmDESCBC
 
 // ErrUnsupportedEncryptionAlgorithm is returned when attempting to encrypt
 // content with an unsupported algorithm.
-var ErrUnsupportedEncryptionAlgorithm = errors.New("pkcs7: cannot encrypt content: only DES-CBC, AES-CBC, and AES-GCM supported")
+var ErrUnsupportedEncryptionAlgorithm = errors.New("pkcs7: cannot encrypt content: only DES-CBC, 3DES-CBC, AES-CBC, and AES-GCM supported")
 
 // KeyEncryptionAlgorithm determines the algorithm used to encrypt a
 // content key. Change the value of this variable to change which
@@ -294,6 +297,50 @@ func encryptDESCBC(content []byte, key []byte, config *EncryptionConfig) ([]byte
 	return key, &eci, nil
 }
 
+func encrypt3DESCBC(content []byte, key []byte, config *EncryptionConfig) ([]byte, *encryptedContentInfo, error) {
+	if key == nil {
+		// Create 3DES key (24 bytes)
+		key = make([]byte, 24)
+
+		_, err := rand.Read(key)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// Create CBC IV
+	iv := make([]byte, des.BlockSize)
+	_, err := rand.Read(iv)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Encrypt padded content
+	block, err := des.NewTripleDESCipher(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	mode := cipher.NewCBCEncrypter(block, iv)
+	plaintext, err := pad(content, mode.BlockSize())
+	if err != nil {
+		return nil, nil, err
+	}
+	cyphertext := make([]byte, len(plaintext))
+	mode.CryptBlocks(cyphertext, plaintext)
+
+	// Prepare ASN.1 Encrypted Content Info
+	eci := encryptedContentInfo{
+		ContentType: OIDData,
+		ContentEncryptionAlgorithm: pkix.AlgorithmIdentifier{
+			Algorithm:  OIDEncryptionAlgorithmDESEDE3CBC,
+			Parameters: asn1.RawValue{Tag: 4, Bytes: iv},
+		},
+		EncryptedContent: marshalEncryptedContent(cyphertext),
+	}
+
+	return key, &eci, nil
+}
+
 func encryptAESCBC(content []byte, key []byte, config *EncryptionConfig) ([]byte, *encryptedContentInfo, error) {
 	var keyLen int
 	var algID asn1.ObjectIdentifier
@@ -376,6 +423,8 @@ func EncryptWithConfig(content []byte, recipients []*x509.Certificate, config *E
 	switch config.ContentEncryptionAlgorithm {
 	case EncryptionAlgorithmDESCBC:
 		key, eci, err = encryptDESCBC(content, nil, config)
+	case EncryptionAlgorithm3DESCBC:
+		key, eci, err = encrypt3DESCBC(content, nil, config)
 	case EncryptionAlgorithmAES128CBC:
 		fallthrough
 	case EncryptionAlgorithmAES192CBC:
@@ -532,6 +581,9 @@ func EncryptUsingPSKWithConfig(content []byte, key []byte, config *EncryptionCon
 	switch config.ContentEncryptionAlgorithm {
 	case EncryptionAlgorithmDESCBC:
 		_, eci, err = encryptDESCBC(content, key, config)
+
+	case EncryptionAlgorithm3DESCBC:
+		_, eci, err = encrypt3DESCBC(content, key, config)
 
 	case EncryptionAlgorithmAES128GCM:
 		fallthrough

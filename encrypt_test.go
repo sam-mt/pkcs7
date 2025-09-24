@@ -17,6 +17,7 @@ import (
 func TestEncrypt(t *testing.T) {
 	modes := []int{
 		EncryptionAlgorithmDESCBC,
+		EncryptionAlgorithm3DESCBC,
 		EncryptionAlgorithmAES128CBC,
 		EncryptionAlgorithmAES192CBC,
 		EncryptionAlgorithmAES256CBC,
@@ -60,6 +61,7 @@ func TestEncrypt(t *testing.T) {
 func TestEncryptUsingPSK(t *testing.T) {
 	modes := []int{
 		EncryptionAlgorithmDESCBC,
+		EncryptionAlgorithm3DESCBC,
 		EncryptionAlgorithmAES128GCM,
 		EncryptionAlgorithmAES192GCM,
 	}
@@ -72,6 +74,8 @@ func TestEncryptUsingPSK(t *testing.T) {
 		switch mode {
 		case EncryptionAlgorithmDESCBC:
 			key = []byte("64BitKey")
+		case EncryptionAlgorithm3DESCBC:
+			key = []byte("192BitKey4TripleDESUsage")
 		case EncryptionAlgorithmAES128GCM:
 			key = []byte("128BitKey4AESGCM")
 		case EncryptionAlgorithmAES192GCM:
