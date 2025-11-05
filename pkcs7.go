@@ -300,6 +300,164 @@ func isCertMatchForIssuerAndSerial(cert *x509.Certificate, ias issuerAndSerial) 
 	return cert.SerialNumber.Cmp(ias.SerialNumber) == 0 && bytes.Equal(cert.RawIssuer, ias.IssuerName.FullBytes)
 }
 
+// GetContentEncryptionAlgorithm returns the OID of the content encryption algorithm
+// used in the PKCS7 encrypted or enveloped data. Returns nil if the PKCS7 data
+// is not encrypted/enveloped data.
+//
+// Supported algorithms include:
+//   - DES-CBC (OIDEncryptionAlgorithmDESCBC)
+//   - 3DES-CBC (OIDEncryptionAlgorithmDESEDE3CBC)
+//   - AES-128/192/256-CBC (OIDEncryptionAlgorithmAES128CBC, etc.)
+//   - AES-128/192/256-GCM (OIDEncryptionAlgorithmAES128GCM, etc.)
+//
+// Example:
+//
+//	p7, _ := pkcs7.Parse(data)
+//	alg := p7.GetContentEncryptionAlgorithm()
+//	if alg.Equal(pkcs7.OIDEncryptionAlgorithmAES256GCM) {
+//	    fmt.Println("Content encrypted with AES-256-GCM")
+//	}
+func (p7 *PKCS7) GetContentEncryptionAlgorithm() asn1.ObjectIdentifier {
+	switch data := p7.raw.(type) {
+	case envelopedData:
+		return data.EncryptedContentInfo.ContentEncryptionAlgorithm.Algorithm
+	case encryptedData:
+		return data.EncryptedContentInfo.ContentEncryptionAlgorithm.Algorithm
+	}
+	return nil
+}
+
+// GetKeyEncryptionAlgorithm returns the OID of the key encryption algorithm
+// used for the specified recipient in enveloped data. Returns nil if:
+//   - The PKCS7 data is not enveloped data (e.g., it's encrypted data with PSK)
+//   - No matching recipient is found for the certificate
+//
+// Supported algorithms include:
+//   - RSA PKCS#1 v1.5 (OIDEncryptionAlgorithmRSA)
+//   - RSA-OAEP (OIDEncryptionAlgorithmRSAESOAEP)
+//
+// Example:
+//
+//	p7, _ := pkcs7.Parse(data)
+//	alg := p7.GetKeyEncryptionAlgorithm(cert)
+//	if alg != nil && alg.Equal(pkcs7.OIDEncryptionAlgorithmRSAESOAEP) {
+//	    fmt.Println("Key encrypted with RSA-OAEP")
+//	}
+func (p7 *PKCS7) GetKeyEncryptionAlgorithm(cert *x509.Certificate) asn1.ObjectIdentifier {
+	data, ok := p7.raw.(envelopedData)
+	if !ok {
+		return nil
+	}
+
+	recipient := selectRecipientForCertificate(data.RecipientInfos, cert)
+	if recipient.EncryptedKey == nil {
+		return nil
+	}
+
+	return recipient.KeyEncryptionAlgorithm.Algorithm
+}
+
+// GetKeyEncryptionHash returns the hash function used with RSA-OAEP key encryption
+// for the specified recipient. Returns an error if:
+//   - The PKCS7 data is not enveloped data
+//   - No matching recipient is found
+//   - The key encryption algorithm is not RSA-OAEP
+//   - The hash function cannot be determined from the parameters
+//
+// Supported hash functions include:
+//   - crypto.SHA1, crypto.SHA224, crypto.SHA256, crypto.SHA384, crypto.SHA512
+//
+// Example:
+//
+//	p7, _ := pkcs7.Parse(data)
+//	hash, err := p7.GetKeyEncryptionHash(cert)
+//	if err == nil {
+//	    fmt.Printf("RSA-OAEP uses %v\n", hash)
+//	}
+func (p7 *PKCS7) GetKeyEncryptionHash(cert *x509.Certificate) (crypto.Hash, error) {
+	data, ok := p7.raw.(envelopedData)
+	if !ok {
+		return crypto.Hash(0), errors.New("pkcs7: not enveloped data")
+	}
+
+	recipient := selectRecipientForCertificate(data.RecipientInfos, cert)
+	if recipient.EncryptedKey == nil {
+		return crypto.Hash(0), errors.New("pkcs7: no recipient found for certificate")
+	}
+
+	if !recipient.KeyEncryptionAlgorithm.Algorithm.Equal(OIDEncryptionAlgorithmRSAESOAEP) {
+		return crypto.Hash(0), errors.New("pkcs7: key encryption algorithm is not RSA-OAEP")
+	}
+
+	return getHashFuncForKeyEncryptionAlgorithm(recipient.KeyEncryptionAlgorithm)
+}
+
+// GetContentEncryptionAlgorithmName returns a human-readable name for the
+// content encryption algorithm. Returns "Unknown" if the algorithm is not
+// recognized or not present.
+//
+// Example:
+//
+//	p7, _ := pkcs7.Parse(data)
+//	fmt.Println("Encrypted with:", p7.GetContentEncryptionAlgorithmName())
+//	// Output: Encrypted with: AES-256-GCM
+func (p7 *PKCS7) GetContentEncryptionAlgorithmName() string {
+	alg := p7.GetContentEncryptionAlgorithm()
+	if alg == nil {
+		return "Unknown"
+	}
+
+	switch {
+	case alg.Equal(OIDEncryptionAlgorithmDESCBC):
+		return "DES-CBC"
+	case alg.Equal(OIDEncryptionAlgorithmDESEDE3CBC):
+		return "3DES-CBC"
+	case alg.Equal(OIDEncryptionAlgorithmAES128CBC):
+		return "AES-128-CBC"
+	case alg.Equal(OIDEncryptionAlgorithmAES192CBC):
+		return "AES-192-CBC"
+	case alg.Equal(OIDEncryptionAlgorithmAES256CBC):
+		return "AES-256-CBC"
+	case alg.Equal(OIDEncryptionAlgorithmAES128GCM):
+		return "AES-128-GCM"
+	case alg.Equal(OIDEncryptionAlgorithmAES192GCM):
+		return "AES-192-GCM"
+	case alg.Equal(OIDEncryptionAlgorithmAES256GCM):
+		return "AES-256-GCM"
+	default:
+		return "Unknown"
+	}
+}
+
+// GetKeyEncryptionAlgorithmName returns a human-readable name for the
+// key encryption algorithm for the specified recipient. Returns "PSK or Unknown"
+// if the algorithm cannot be determined.
+//
+// Example:
+//
+//	p7, _ := pkcs7.Parse(data)
+//	fmt.Println("Key encrypted with:", p7.GetKeyEncryptionAlgorithmName(cert))
+//	// Output: Key encrypted with: RSA-OAEP-SHA256
+func (p7 *PKCS7) GetKeyEncryptionAlgorithmName(cert *x509.Certificate) string {
+	alg := p7.GetKeyEncryptionAlgorithm(cert)
+	if alg == nil {
+		return "PSK or Unknown"
+	}
+
+	switch {
+	case alg.Equal(OIDEncryptionAlgorithmRSA):
+		return "RSA-PKCS#1-v1.5"
+	case alg.Equal(OIDEncryptionAlgorithmRSAESOAEP):
+		hash, err := p7.GetKeyEncryptionHash(cert)
+		if err != nil {
+			return "RSA-OAEP"
+		}
+		return fmt.Sprintf("RSA-OAEP-%s", hash)
+	default:
+		return "Unknown"
+	}
+}
+
 // Attribute represents a key value pair attribute. Value must be marshalable byte
 // `encoding/asn1`
 type Attribute struct {

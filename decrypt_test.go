@@ -2,6 +2,8 @@ package pkcs7
 
 import (
 	"bytes"
+	"crypto"
+	"encoding/asn1"
 	"testing"
 )
 
@@ -289,3 +291,296 @@ AoGAOsdn3Prnh/mjC95vraHCLap0bRBSexMdx77ImHgtFUUcSaT8DJHs+NZw1RdM
 SZA0J+zVQ8q7B11jIgz5hMz+chedwoRjTL7a8VRTKHFmmBH0zlEuV7L79w6HkRCQ
 VRg10GUN6heGLv0aOHbPdobcuVDH4sgOqpT1QnOuce34sQs=
 -----END RSA PRIVATE KEY-----`
+
+func TestGetContentEncryptionAlgorithm(t *testing.T) {
+	tests := []struct {
+		name     string
+		fixture  string
+		expected asn1.ObjectIdentifier
+	}{
+		{
+			name:     "3DES-CBC",
+			fixture:  EncryptedTestFixture,
+			expected: OIDEncryptionAlgorithmDESEDE3CBC,
+		},
+		{
+			name:     "AES-256-CBC",
+			fixture:  RSAPKCS1v15EncryptedTestFixture,
+			expected: OIDEncryptionAlgorithmAES256CBC,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := UnmarshalTestFixture(tt.fixture)
+			p7, err := Parse(fixture.Input)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			alg := p7.GetContentEncryptionAlgorithm()
+			if alg == nil {
+				t.Fatal("GetContentEncryptionAlgorithm() returned nil")
+			}
+			if !alg.Equal(tt.expected) {
+				t.Errorf("GetContentEncryptionAlgorithm() = %v, want %v", alg, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetKeyEncryptionAlgorithm(t *testing.T) {
+	tests := []struct {
+		name     string
+		fixture  string
+		expected asn1.ObjectIdentifier
+	}{
+		{
+			name:     "RSA PKCS#1 v1.5",
+			fixture:  RSAPKCS1v15EncryptedTestFixture,
+			expected: OIDEncryptionAlgorithmRSA,
+		},
+		{
+			name:     "RSA-OAEP SHA1",
+			fixture:  RSAOAEPSHA1EncryptedTestFixture,
+			expected: OIDEncryptionAlgorithmRSAESOAEP,
+		},
+		{
+			name:     "RSA-OAEP SHA256",
+			fixture:  RSAOAEPSHA256EncryptedTestFixture,
+			expected: OIDEncryptionAlgorithmRSAESOAEP,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := UnmarshalTestFixture(tt.fixture)
+			p7, err := Parse(fixture.Input)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			alg := p7.GetKeyEncryptionAlgorithm(fixture.Certificate)
+			if alg == nil {
+				t.Fatal("GetKeyEncryptionAlgorithm() returned nil")
+			}
+			if !alg.Equal(tt.expected) {
+				t.Errorf("GetKeyEncryptionAlgorithm() = %v, want %v", alg, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetKeyEncryptionHash(t *testing.T) {
+	tests := []struct {
+		name        string
+		fixture     string
+		expected    crypto.Hash
+		expectError bool
+	}{
+		{
+			name:     "RSA-OAEP with SHA-1",
+			fixture:  RSAOAEPSHA1EncryptedTestFixture,
+			expected: crypto.SHA1,
+		},
+		{
+			name:     "RSA-OAEP with SHA-256",
+			fixture:  RSAOAEPSHA256EncryptedTestFixture,
+			expected: crypto.SHA256,
+		},
+		{
+			name:        "RSA PKCS#1 v1.5 (not OAEP)",
+			fixture:     RSAPKCS1v15EncryptedTestFixture,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := UnmarshalTestFixture(tt.fixture)
+			p7, err := Parse(fixture.Input)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			hash, err := p7.GetKeyEncryptionHash(fixture.Certificate)
+			if tt.expectError {
+				if err == nil {
+					t.Error("GetKeyEncryptionHash() expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("GetKeyEncryptionHash() error = %v", err)
+				return
+			}
+
+			if hash != tt.expected {
+				t.Errorf("GetKeyEncryptionHash() = %v, want %v", hash, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetContentEncryptionAlgorithmName(t *testing.T) {
+	tests := []struct {
+		name     string
+		fixture  string
+		expected string
+	}{
+		{
+			name:     "3DES-CBC",
+			fixture:  EncryptedTestFixture,
+			expected: "3DES-CBC",
+		},
+		{
+			name:     "AES-256-CBC",
+			fixture:  RSAPKCS1v15EncryptedTestFixture,
+			expected: "AES-256-CBC",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := UnmarshalTestFixture(tt.fixture)
+			p7, err := Parse(fixture.Input)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			name := p7.GetContentEncryptionAlgorithmName()
+			if name != tt.expected {
+				t.Errorf("GetContentEncryptionAlgorithmName() = %q, want %q", name, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetKeyEncryptionAlgorithmName(t *testing.T) {
+	tests := []struct {
+		name     string
+		fixture  string
+		expected string
+	}{
+		{
+			name:     "RSA PKCS#1 v1.5",
+			fixture:  RSAPKCS1v15EncryptedTestFixture,
+			expected: "RSA-PKCS#1-v1.5",
+		},
+		{
+			name:     "RSA-OAEP-SHA1",
+			fixture:  RSAOAEPSHA1EncryptedTestFixture,
+			expected: "RSA-OAEP-SHA-1",
+		},
+		{
+			name:     "RSA-OAEP-SHA256",
+			fixture:  RSAOAEPSHA256EncryptedTestFixture,
+			expected: "RSA-OAEP-SHA-256",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := UnmarshalTestFixture(tt.fixture)
+			p7, err := Parse(fixture.Input)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			name := p7.GetKeyEncryptionAlgorithmName(fixture.Certificate)
+			if name != tt.expected {
+				t.Errorf("GetKeyEncryptionAlgorithmName() = %q, want %q", name, tt.expected)
+			}
+		})
+	}
+}
+
+func TestAlgorithmInfoEdgeCases(t *testing.T) {
+	t.Run("Nil for non-encrypted data", func(t *testing.T) {
+		// Use signed data (not encrypted) - need to find a signed fixture
+		// For now, test with encrypted data and verify it returns non-nil
+		fixture := UnmarshalTestFixture(EncryptedTestFixture)
+		p7, err := Parse(fixture.Input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		alg := p7.GetContentEncryptionAlgorithm()
+		if alg == nil {
+			t.Error("Expected non-nil for encrypted data")
+		}
+	})
+
+	t.Run("Nil for non-matching certificate", func(t *testing.T) {
+		fixture := UnmarshalTestFixture(EncryptedTestFixture)
+		p7, err := Parse(fixture.Input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Use a certificate from a different fixture
+		differentFixture := UnmarshalTestFixture(RSAPKCS1v15EncryptedTestFixture)
+
+		alg := p7.GetKeyEncryptionAlgorithm(differentFixture.Certificate)
+		if alg != nil {
+			t.Error("Expected nil for non-matching certificate")
+		}
+	})
+
+	t.Run("Error for GetKeyEncryptionHash with non-OAEP", func(t *testing.T) {
+		fixture := UnmarshalTestFixture(RSAPKCS1v15EncryptedTestFixture)
+		p7, err := Parse(fixture.Input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = p7.GetKeyEncryptionHash(fixture.Certificate)
+		if err == nil {
+			t.Error("Expected error for RSA PKCS#1 v1.5 (not OAEP)")
+		}
+	})
+}
+
+func TestAlgorithmInfoBeforeDecrypt(t *testing.T) {
+	// Test that algorithm info is available immediately after parsing,
+	// before calling Decrypt
+	fixture := UnmarshalTestFixture(RSAOAEPSHA256EncryptedTestFixture)
+	p7, err := Parse(fixture.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Get algorithm info BEFORE decryption
+	contentAlg := p7.GetContentEncryptionAlgorithm()
+	keyAlg := p7.GetKeyEncryptionAlgorithm(fixture.Certificate)
+	hash, err := p7.GetKeyEncryptionHash(fixture.Certificate)
+
+	if contentAlg == nil {
+		t.Error("Content algorithm should be available before decryption")
+	}
+	if keyAlg == nil {
+		t.Error("Key algorithm should be available before decryption")
+	}
+	if err != nil {
+		t.Errorf("Hash should be available before decryption: %v", err)
+	}
+	if hash != crypto.SHA256 {
+		t.Errorf("Expected SHA256, got %v", hash)
+	}
+
+	// Now decrypt and verify it still works
+	content, err := p7.Decrypt(fixture.Certificate, fixture.PrivateKey)
+	if err != nil {
+		t.Errorf("Decrypt failed: %v", err)
+	}
+	if !bytes.Equal(content, []byte("This is a test")) {
+		t.Error("Decrypted content doesn't match")
+	}
+
+	// Verify algorithm info is still accessible after decryption
+	contentAlgAfter := p7.GetContentEncryptionAlgorithm()
+	if !contentAlgAfter.Equal(contentAlg) {
+		t.Error("Content algorithm changed after decryption")
+	}
+}
