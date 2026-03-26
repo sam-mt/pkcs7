@@ -252,6 +252,16 @@ func TestBackwardCompatibility(t *testing.T) {
 	plaintext := []byte("Backward compatibility test")
 	recipients := []*x509.Certificate{cert.Certificate}
 
+	// Save and restore global state so mutations don't leak into other tests.
+	origCEA := ContentEncryptionAlgorithm
+	origKEA := KeyEncryptionAlgorithm
+	origKEH := KeyEncryptionHash
+	defer func() {
+		ContentEncryptionAlgorithm = origCEA
+		KeyEncryptionAlgorithm = origKEA
+		KeyEncryptionHash = origKEH
+	}()
+
 	// Test that old API still works exactly as before
 	ContentEncryptionAlgorithm = EncryptionAlgorithmAES256CBC
 	KeyEncryptionAlgorithm = OIDEncryptionAlgorithmRSAESOAEP

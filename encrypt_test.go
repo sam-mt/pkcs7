@@ -7,7 +7,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"reflect"
@@ -191,7 +190,7 @@ func TestEncryptAndDecryptWithOpenSSL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	contentFile, err := ioutil.TempFile("", "content")
+	contentFile, err := os.CreateTemp("", "content")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +202,7 @@ func TestEncryptAndDecryptWithOpenSSL(t *testing.T) {
 	}
 	contentFile.Close()
 
-	recipientFile, err := ioutil.TempFile("", "content")
+	recipientFile, err := os.CreateTemp("", "content")
 	if err != nil {
 		t.Fatal(err)
 	}
