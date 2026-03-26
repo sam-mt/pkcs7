@@ -8,6 +8,8 @@ import (
 	"fmt"
 )
 
+// Compress compresses data using zlib and wraps it in a PKCS#7 CompressedData
+// structure (OID 1.2.840.113549.1.9.16.1.9, RFC 3274).
 func Compress(data []byte) ([]byte, error) {
 	buf := bytes.Buffer{}
 
@@ -15,9 +17,14 @@ func Compress(data []byte) ([]byte, error) {
 	if _, err := zlibWriter.Write(data); err != nil {
 		return nil, fmt.Errorf("failed to compress data: %w", err)
 	}
-	zlibWriter.Close()
+	if err := zlibWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to finalise zlib stream: %w", err)
+	}
 
-	octets, _ := asn1.Marshal(buf.Bytes())
+	octets, err := asn1.Marshal(buf.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal compressed content: %w", err)
+	}
 	compressedData := compressedData{
 		Version: 0,
 		CompressionAlgorithm: pkix.AlgorithmIdentifier{
